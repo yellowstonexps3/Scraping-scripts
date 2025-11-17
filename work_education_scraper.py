@@ -1,6 +1,7 @@
 import csv
 import time
 import pandas as pd
+from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
@@ -37,8 +38,18 @@ profile_links = df["Profile Link"].dropna().unique().tolist()
 print(f"✅ Loaded {len(profile_links)} profile URLs.\n")
 
 # ---------------- PREPARE OUTPUT ----------------
-with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-    csv.writer(f).writerow(["Profile URL", "Work & Education"])
+# Try to create output file, add timestamp if file is locked
+try:
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["Profile URL", "Work & Education"])
+    print(f"📝 Output file: {OUTPUT_FILE}")
+except PermissionError:
+    # File is open in another program, create new file with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    OUTPUT_FILE = f"facebook_work_education_{timestamp}.csv"
+    print(f"⚠ Original file is open! Creating new file: {OUTPUT_FILE}")
+    with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["Profile URL", "Work & Education"])
 
 
 def build_about_url(url, tab_param):
