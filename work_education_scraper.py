@@ -5,6 +5,7 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+import os
 
 # ---------------- CONFIG ----------------
 INPUT_FILE = "facebook_followers.csv"
@@ -38,6 +39,7 @@ print(f"✅ Loaded {len(profile_links)} profile URLs.\n")
 with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["Profile URL", "Work & Education"])
+print(f"✅ CSV file created: {OUTPUT_FILE}\n")
 
 
 # ---------------- SCRAPER FUNCTION ----------------
@@ -127,21 +129,54 @@ def scrape_work_education(url):
 
     entries = list(entries)
     
-    print(f"   ✓ Found {len(entries)} entries: {entries}")
+    print(f"   ✓ Found {len(entries)} entries")
+    if entries:
+        for entry in entries:
+            print(f"      - {entry}")
 
-    return " | ".join(entries)
+    return " | ".join(entries) if entries else ""
 
 
 # ---------------- MAIN LOOP ----------------
+print("=" * 60)
+print("STARTING SCRAPING...")
+print("=" * 60)
+
 for i, url in enumerate(profile_links, start=1):
     print(f"\n📄 [{i}/{len(profile_links)}] Scraping {url}")
-    work_edu_data = scrape_work_education(url)
+    
+    try:
+        work_edu_data = scrape_work_education(url)
 
-    with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([url, work_edu_data])
+        # Write to CSV immediately with flush
+        with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([url, work_edu_data])
+            f.flush()  # Force write to disk immediately
+        
+        print(f"   💾 Saved to CSV")
+        
+    except Exception as e:
+        print(f"   ❌ Error: {e}")
+        # Write empty row on error
+        with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow([url, ""])
+            f.flush()
 
     time.sleep(2)
 
-print(f"\n✅ DONE — Saved to: {OUTPUT_FILE}")
+print("\n" + "=" * 60)
+print(f"✅ DONE — All data saved to: {OUTPUT_FILE}")
+print(f"📊 Total profiles scraped: {len(profile_links)}")
+
+# Check file exists and show size
+if os.path.exists(OUTPUT_FILE):
+    file_size = os.path.getsize(OUTPUT_FILE)
+    print(f"📁 File size: {file_size} bytes")
+    print(f"📂 Full path: {os.path.abspath(OUTPUT_FILE)}")
+else:
+    print("⚠️ WARNING: Output file not found!")
+
+print("=" * 60)
 driver.quit()
