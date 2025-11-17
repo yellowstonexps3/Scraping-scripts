@@ -39,14 +39,13 @@ print(f"✅ Loaded {len(profile_links)} profile URLs.\n")
 with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["Profile URL", "Work & Education"])
-print(f"✅ CSV file created: {OUTPUT_FILE}\n")
 
 
-# ---------------- SCRAPER FUNCTION ----------------
+# ---------------- SCRAPER FUNCTION (EXACTLY LIKE ALLPLACES) ----------------
 def scrape_work_education(url):
     print(f"➡ Extracting Work & Education from: {url}")
 
-    # Build about URL
+    # Build about URL for work and education
     if "?id=" in url:
         about_url = url + "&sk=about_work_and_education"
     else:
@@ -55,7 +54,7 @@ def scrape_work_education(url):
     driver.get(about_url)
     time.sleep(5)
 
-    # Try clicking "Work and education" section
+    # Try clicking "Work and education"
     try:
         selectors = [
             "//span[text()='Work and education']",
@@ -73,110 +72,97 @@ def scrape_work_education(url):
     except:
         pass
 
-    # Collect ALL work and education entries
+    # Collect ALL possible work and education info (EXACTLY like allplaces does)
     entries = set()
 
-    # Method 1: Get ALL spans from Work section
+    # Method 1: Look for spans inside Work section (like allplaces does for Places lived)
     try:
-        work_elems = driver.find_elements(
+        elems = driver.find_elements(
             By.XPATH,
             "//div[contains(@aria-label,'Work')]//span[@dir='auto']"
         )
-        for e in work_elems:
+        for e in elems:
             t = e.text.strip()
-            if t and len(t) > 2 and t.lower() not in ['work', 'professional skills']:
-                entries.add(f"💼 {t}")
+            if t and len(t) > 2 and t.lower() != "work":
+                entries.add(t)
     except:
         pass
 
-    # Method 2: Get ALL spans from University/College section
+    # Method 2: Look for spans inside University section
     try:
-        uni_elems = driver.find_elements(
+        elems = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'University') or contains(@aria-label,'College')]//span[@dir='auto']"
+            "//div[contains(@aria-label,'University')]//span[@dir='auto']"
         )
-        for e in uni_elems:
+        for e in elems:
             t = e.text.strip()
-            if t and len(t) > 2 and t.lower() not in ['university', 'college']:
-                entries.add(f"🎓 {t}")
+            if t and len(t) > 2 and t.lower() != "university":
+                entries.add(t)
     except:
         pass
 
-    # Method 3: Get ALL spans from High School section
+    # Method 3: Look for spans inside College section
     try:
-        hs_elems = driver.find_elements(
+        elems = driver.find_elements(
+            By.XPATH,
+            "//div[contains(@aria-label,'College')]//span[@dir='auto']"
+        )
+        for e in elems:
+            t = e.text.strip()
+            if t and len(t) > 2 and t.lower() != "college":
+                entries.add(t)
+    except:
+        pass
+
+    # Method 4: Look for spans inside High School section
+    try:
+        elems = driver.find_elements(
             By.XPATH,
             "//div[contains(@aria-label,'High School')]//span[@dir='auto']"
         )
-        for e in hs_elems:
+        for e in elems:
             t = e.text.strip()
-            if t and len(t) > 2 and t.lower() not in ['high school', 'secondary school']:
-                entries.add(f"🏫 {t}")
+            if t and len(t) > 2 and t.lower() != "high school":
+                entries.add(t)
     except:
         pass
 
-    # Method 4: Fallback - Look for common work/education patterns in ALL spans
+    # Method 5: Backup — any span that looks like work/education (like allplaces does with commas)
+    # Look for common patterns in ANY span
     try:
         all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
         for s in all_spans:
             t = s.text.strip()
-            # Filter for work/education keywords
-            if any(keyword in t for keyword in ['Works at', 'Worked at', 'Former', 'Studied at', 'Studies at', 'Went to']):
-                if len(t) <= 100:  # reasonable length
+            # Look for work/education keywords and reasonable length
+            if t and 3 < len(t) <= 80:
+                # Check if it contains work/education keywords
+                keywords = [
+                    'Works at', 'Worked at', 'Work at', 'Former',
+                    'Studied at', 'Studies at', 'Went to',
+                    'Class of', 'Graduated'
+                ]
+                if any(keyword in t for keyword in keywords):
                     entries.add(t)
     except:
         pass
 
     entries = list(entries)
-    
-    print(f"   ✓ Found {len(entries)} entries")
-    if entries:
-        for entry in entries:
-            print(f"      - {entry}")
 
-    return " | ".join(entries) if entries else ""
+    print(f"   ✓ Found Entries: {entries}")
+
+    return " | ".join(entries)
 
 
-# ---------------- MAIN LOOP ----------------
-print("=" * 60)
-print("STARTING SCRAPING...")
-print("=" * 60)
-
+# ---------------- MAIN LOOP (EXACTLY LIKE ALLPLACES) ----------------
 for i, url in enumerate(profile_links, start=1):
     print(f"\n📄 [{i}/{len(profile_links)}] Scraping {url}")
-    
-    try:
-        work_edu_data = scrape_work_education(url)
+    work_edu = scrape_work_education(url)
 
-        # Write to CSV immediately with flush
-        with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([url, work_edu_data])
-            f.flush()  # Force write to disk immediately
-        
-        print(f"   💾 Saved to CSV")
-        
-    except Exception as e:
-        print(f"   ❌ Error: {e}")
-        # Write empty row on error
-        with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow([url, ""])
-            f.flush()
+    with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([url, work_edu])
 
     time.sleep(2)
 
-print("\n" + "=" * 60)
-print(f"✅ DONE — All data saved to: {OUTPUT_FILE}")
-print(f"📊 Total profiles scraped: {len(profile_links)}")
-
-# Check file exists and show size
-if os.path.exists(OUTPUT_FILE):
-    file_size = os.path.getsize(OUTPUT_FILE)
-    print(f"📁 File size: {file_size} bytes")
-    print(f"📂 Full path: {os.path.abspath(OUTPUT_FILE)}")
-else:
-    print("⚠️ WARNING: Output file not found!")
-
-print("=" * 60)
+print(f"\n✅ DONE — Saved to: {OUTPUT_FILE}")
 driver.quit()
