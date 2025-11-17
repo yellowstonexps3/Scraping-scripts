@@ -54,49 +54,84 @@ def sanitize_filename(url):
 
 
 def save_html_page(url, index):
-    """Save the HTML of the about page"""
-    print(f"➡ Collecting HTML from: {url}")
+    """Save the COMPLETE HTML of ALL about page sections"""
+    print(f"➡ Collecting COMPLETE about page from: {url}")
 
-    # Build about URL
-    if "?id=" in url:
-        about_url = url + "&sk=about"
-    else:
-        about_url = url + "?sk=about"
+    # All about sections to collect
+    sections = [
+        ("overview", "about"),
+        ("work_education", "about_work_and_education"),
+        ("places", "about_places"),
+        ("contact_info", "about_contact_and_basic_info"),
+        ("family", "about_family_and_relationships"),
+        ("details", "about_details"),
+        ("life_events", "about_life_events"),
+    ]
+
+    all_html = []
+    all_html.append(f"<!-- Profile URL: {url} -->")
+    all_html.append(f"<!-- Collected: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -->")
+    all_html.append("\n\n")
 
     try:
-        driver.get(about_url)
-        time.sleep(5)
+        for section_name, section_param in sections:
+            print(f"   📥 Collecting: {section_name}...")
+            
+            # Build about URL for this section
+            if "?id=" in url:
+                about_url = url + f"&sk={section_param}"
+            else:
+                about_url = url + f"?sk={section_param}"
 
-        # Try clicking "Work and education" to expand
-        try:
-            selectors = [
-                "//span[text()='Work and education']",
-                "//a[contains(text(),'Work and education')]",
-            ]
-            for s in selectors:
+            try:
+                driver.get(about_url)
+                time.sleep(4)
+
+                # Scroll down to load all content
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+
+                # Try to expand sections by clicking "See all" or section headers
                 try:
-                    btn = driver.find_element(By.XPATH, s)
-                    driver.execute_script("arguments[0].click();", btn)
-                    time.sleep(3)
-                    break
+                    expand_buttons = driver.find_elements(By.XPATH, 
+                        "//span[contains(text(),'See all') or contains(text(),'See more') or contains(text(),'Show')]")
+                    for btn in expand_buttons[:5]:  # Limit to first 5 to avoid issues
+                        try:
+                            driver.execute_script("arguments[0].click();", btn)
+                            time.sleep(1)
+                        except:
+                            pass
                 except:
                     pass
-        except:
-            pass
 
-        # Get page source (complete HTML)
-        html_content = driver.page_source
+                # Get page source
+                html_content = driver.page_source
+                
+                all_html.append(f"\n\n<!-- ========== SECTION: {section_name.upper()} ========== -->")
+                all_html.append(f"<!-- URL: {about_url} -->\n")
+                all_html.append(html_content)
+                
+                print(f"      ✓ {section_name}: {len(html_content):,} bytes")
+
+            except Exception as e:
+                print(f"      ⚠ {section_name}: Failed - {e}")
+                all_html.append(f"\n\n<!-- SECTION {section_name}: FAILED - {e} -->\n")
+
+            time.sleep(1)
+
+        # Combine all sections
+        complete_html = "\n".join(all_html)
 
         # Create filename
         filename = sanitize_filename(url)
-        filepath = os.path.join(OUTPUT_FOLDER, f"{index:04d}_{filename}.html")
+        filepath = os.path.join(OUTPUT_FOLDER, f"{index:04d}_{filename}_complete.html")
 
         # Save HTML to file
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(html_content)
+            f.write(complete_html)
 
-        file_size = len(html_content)
-        print(f"   ✅ Saved: {filepath} ({file_size:,} bytes)")
+        file_size = len(complete_html)
+        print(f"   ✅ COMPLETE HTML Saved: {filepath} ({file_size:,} bytes)")
         
         return True, filepath
 
