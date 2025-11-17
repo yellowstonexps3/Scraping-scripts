@@ -38,7 +38,7 @@ print(f"✅ Loaded {len(profile_links)} profile URLs.\n")
 
 # ---------------- PREPARE OUTPUT ----------------
 with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
-    csv.writer(f).writerow(["Profile URL", "Work Entries", "Education Entries"])
+    csv.writer(f).writerow(["Profile URL", "Work & Education"])
 
 
 def build_about_url(url, tab_param):
@@ -67,92 +67,125 @@ def click_section(section_label):
 
 def scrape_work_and_education(url):
     """
-    Scrape both work and education in ONE visit to avoid duplicate page loads
+    Scrape both work and education in ONE visit and combine into single output
     """
     print(f"  ➡ Visiting Work & Education page...")
     
     try:
         driver.get(build_about_url(url, TAB_PARAM))
-        time.sleep(4)
+        time.sleep(5)
         
         # Try to expand the section if needed
         click_section("Work and education")
-        time.sleep(2)
+        time.sleep(3)
         
     except Exception as e:
         print(f"  ⚠ Error loading page: {e}")
-        return "", ""
+        return ""
 
-    # ============ SCRAPE WORK ============
+    all_entries = []
+
+    # ============ SCRAPE WORK - IMPROVED ============
     work_entries = []
     
     try:
-        # Method 1: Look for work section with aria-label
-        work_cards = driver.find_elements(
+        # Method 1: Get all text from Work section using aria-label
+        work_section = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'Work')]//div[@role='article' or contains(@class,'x1lliihq')]//span[@dir='auto']"
+            "//div[contains(@aria-label,'Work')]//span[@dir='auto' or @dir='ltr']"
         )
-        for card in work_cards:
-            text = card.text.strip()
-            if text and len(text) > 1:
+        for elem in work_section:
+            text = elem.text.strip()
+            if text and len(text) > 2 and 'Work' not in text:
                 work_entries.append(text)
         
-        # Method 2: Look for "Works at" or "Former" text
-        work_fallback = driver.find_elements(
+        # Method 2: Look for profile intro work info
+        intro_work = driver.find_elements(
             By.XPATH,
-            "//span[@dir='auto' and (contains(text(),'Works at') or contains(text(),'Former') or contains(text(),'worked at'))]"
+            "//span[contains(text(),'Works at') or contains(text(),'Work at')]//parent::div//span[@dir='auto']"
         )
-        for span in work_fallback:
-            text = span.text.strip()
-            if text and text not in work_entries:
+        for elem in intro_work:
+            text = elem.text.strip()
+            if text and 'Works at' not in text and 'Work at' not in text:
                 work_entries.append(text)
-                
-        # Method 3: Generic work section divs
-        work_generic = driver.find_elements(
+        
+        # Method 3: Direct "Works at" and "Former" patterns
+        work_patterns = driver.find_elements(
             By.XPATH,
-            "//div[contains(text(),'Work')]//following::div[@dir='auto'][position() < 10]"
+            "//div[contains(text(),'Works at') or contains(text(),'Former') or contains(text(),'Worked at')]"
         )
-        for div in work_generic:
-            text = div.text.strip()
-            if text and len(text) > 2 and text not in work_entries:
+        for elem in work_patterns:
+            full_text = elem.text.strip()
+            # Extract company name after "Works at", "Former", etc.
+            if 'Works at' in full_text:
+                company = full_text.replace('Works at', '').strip()
+                if company:
+                    work_entries.append(f"💼 Works at: {company}")
+            elif 'Worked at' in full_text:
+                company = full_text.replace('Worked at', '').strip()
+                if company:
+                    work_entries.append(f"💼 Worked at: {company}")
+            elif 'Former' in full_text:
+                company = full_text.replace('Former', '').strip()
+                if company:
+                    work_entries.append(f"💼 Former: {company}")
+        
+        # Method 4: Look in about overview for work mentions
+        overview_work = driver.find_elements(
+            By.XPATH,
+            "//a[contains(@href,'work_and_education')]//preceding::div[contains(text(),'at')]//span[@dir='auto']"
+        )
+        for elem in overview_work:
+            text = elem.text.strip()
+            if text and len(text) > 2:
                 work_entries.append(text)
                 
     except Exception as e:
         print(f"  ⚠ Work scraping error: {e}")
 
-    # ============ SCRAPE EDUCATION ============
+    # ============ SCRAPE EDUCATION - IMPROVED ============
     edu_entries = []
     
     try:
-        # Method 1: University section
-        uni_cards = driver.find_elements(
+        # Method 1: University/College section
+        uni_section = driver.find_elements(
             By.XPATH,
             "//div[contains(@aria-label,'University') or contains(@aria-label,'College')]//span[@dir='auto']"
         )
-        for card in uni_cards:
-            text = card.text.strip()
-            if text and len(text) > 1:
-                edu_entries.append(f"🎓 {text}")
+        for elem in uni_section:
+            text = elem.text.strip()
+            if text and len(text) > 2 and 'University' not in text and 'College' not in text:
+                edu_entries.append(f"🎓 University: {text}")
         
         # Method 2: High School section
-        hs_cards = driver.find_elements(
+        hs_section = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'High School') or contains(@aria-label,'Secondary')]//span[@dir='auto']"
+            "//div[contains(@aria-label,'High School')]//span[@dir='auto']"
         )
-        for card in hs_cards:
-            text = card.text.strip()
-            if text and len(text) > 1:
-                edu_entries.append(f"🏫 {text}")
+        for elem in hs_section:
+            text = elem.text.strip()
+            if text and len(text) > 2 and 'High School' not in text:
+                edu_entries.append(f"🏫 High School: {text}")
         
-        # Method 3: Fallback for "Studied at", "Went to"
-        edu_fallback = driver.find_elements(
+        # Method 3: Profile intro education patterns
+        edu_patterns = driver.find_elements(
             By.XPATH,
-            "//span[@dir='auto' and (contains(text(),'Studied at') or contains(text(),'Went to') or contains(text(),'Studies at'))]"
+            "//div[contains(text(),'Studied at') or contains(text(),'Studies at') or contains(text(),'Went to')]"
         )
-        for span in edu_fallback:
-            text = span.text.strip()
-            if text and text not in [e.replace('🎓 ', '').replace('🏫 ', '') for e in edu_entries]:
-                edu_entries.append(text)
+        for elem in edu_patterns:
+            full_text = elem.text.strip()
+            if 'Studied at' in full_text:
+                school = full_text.replace('Studied at', '').strip()
+                if school:
+                    edu_entries.append(f"🎓 Studied at: {school}")
+            elif 'Studies at' in full_text:
+                school = full_text.replace('Studies at', '').strip()
+                if school:
+                    edu_entries.append(f"🎓 Studies at: {school}")
+            elif 'Went to' in full_text:
+                school = full_text.replace('Went to', '').strip()
+                if school:
+                    edu_entries.append(f"🏫 Went to: {school}")
                 
     except Exception as e:
         print(f"  ⚠ Education scraping error: {e}")
@@ -161,12 +194,17 @@ def scrape_work_and_education(url):
     work_entries = list(dict.fromkeys(work_entries))
     edu_entries = list(dict.fromkeys(edu_entries))
     
-    work_str = " | ".join(work_entries) if work_entries else ""
-    edu_str = " | ".join(edu_entries) if edu_entries else ""
+    # Combine work and education into one list
+    if work_entries:
+        all_entries.extend(work_entries)
+    if edu_entries:
+        all_entries.extend(edu_entries)
     
-    print(f"  ✅ Work: {len(work_entries)} entries | Education: {len(edu_entries)} entries")
+    combined_str = " | ".join(all_entries) if all_entries else ""
     
-    return work_str, edu_str
+    print(f"  ✅ Found: {len(work_entries)} work + {len(edu_entries)} education = {len(all_entries)} total entries")
+    
+    return combined_str
 
 
 # ---------------- MAIN LOOP ----------------
@@ -174,16 +212,16 @@ for idx, url in enumerate(profile_links, start=1):
     print(f"\n📄 [{idx}/{len(profile_links)}] Scraping → {url}")
     
     try:
-        work_data, edu_data = scrape_work_and_education(url)
+        combined_data = scrape_work_and_education(url)
         
         with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow([url, work_data, edu_data])
+            csv.writer(f).writerow([url, combined_data])
             
     except Exception as e:
         print(f"  ❌ Failed: {e}")
         # Write empty row on failure
         with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-            csv.writer(f).writerow([url, "", ""])
+            csv.writer(f).writerow([url, ""])
     
     time.sleep(2)
 
