@@ -147,10 +147,17 @@ def scrape_work_education(url):
         pass
 
     entries = list(entries)
+    
+    # Clean up entries - remove newlines and extra spaces
+    cleaned_entries = []
+    for entry in entries:
+        cleaned = entry.replace('\n', ' ').replace('  ', ' ').strip()
+        if cleaned:
+            cleaned_entries.append(cleaned)
 
-    print(f"   ✓ Found Entries: {entries}")
+    print(f"   ✓ Found {len(cleaned_entries)} Entries: {cleaned_entries}")
 
-    return " | ".join(entries)
+    return " | ".join(cleaned_entries)
 
 
 # ---------------- MAIN LOOP (EXACTLY LIKE ALLPLACES) ----------------
@@ -158,9 +165,13 @@ for i, url in enumerate(profile_links, start=1):
     print(f"\n📄 [{i}/{len(profile_links)}] Scraping {url}")
     work_edu = scrape_work_education(url)
 
+    # Write to CSV with proper quoting
     with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow([url, work_edu])
+        f.flush()  # Force write immediately
+    
+    print(f"   💾 Saved to CSV: {len(work_edu)} characters")
 
     time.sleep(2)
 
