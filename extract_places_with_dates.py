@@ -36,7 +36,7 @@ with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer.writerow(["Profile URL", "Places with Dates"])
 
 
-# ---------------- SCRAPER FUNCTION ----------------
+# ---------------- SCRAPER FUNCTION (SIMPLE LIKE ALLPLACES) ----------------
 def scrape_places_with_dates(url):
     print(f"➡ Extracting Places & Dates from: {url}")
 
@@ -66,88 +66,39 @@ def scrape_places_with_dates(url):
     except:
         pass
 
-    places_data = []
+    # Collect ALL text entries (EXACTLY like allplaces does)
+    entries = set()
 
-    # Get ALL text from Places lived section - line by line
+    # Method 1: Look for spans inside Places lived section
     try:
-        # Get all spans from Places lived section
-        all_spans = driver.find_elements(
+        elems = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//span[@dir='auto' or @dir='ltr']"
+            "//div[contains(@aria-label,'Places lived')]//span[@dir='auto']"
         )
-        
-        # Extract all text lines
-        all_lines = []
-        for span in all_spans:
-            text = span.text.strip()
-            if text and len(text) > 1:
-                all_lines.append(text)
-        
-        # Process lines in pairs (place, then date/status)
-        i = 0
-        while i < len(all_lines):
-            line = all_lines[i]
-            
-            # Skip header texts
-            if line.lower() in ['places lived', 'places', 'current city', 'hometown']:
-                i += 1
-                continue
-            
-            # Check if this looks like a place (has comma or is substantial text)
-            if ',' in line or len(line) > 3:
-                place = line
-                date_info = ""
-                
-                # Check next line for date/status info
-                if i + 1 < len(all_lines):
-                    next_line = all_lines[i + 1]
-                    # Check if next line is a status/date (not another place)
-                    if any(keyword in next_line.lower() for keyword in 
-                           ['moved', 'current', 'home', 'town', 'city', '199', '200', '201', '202']):
-                        date_info = next_line
-                        i += 1  # Skip the date line in next iteration
-                
-                # Format output
-                if date_info:
-                    places_data.append(f"{place} ({date_info})")
-                else:
-                    places_data.append(place)
-            
-            i += 1
-            
-    except Exception as e:
-        print(f"   ⚠ Error: {e}")
+        for e in elems:
+            t = e.text.strip()
+            if t and len(t) > 1 and t.lower() not in ["places lived"]:
+                entries.add(t)
+    except:
         pass
 
-    # Fallback: Get all divs with text content
-    if not places_data:
-        try:
-            divs = driver.find_elements(
-                By.XPATH,
-                "//div[contains(@aria-label,'Places lived')]//div[@dir='auto']"
-            )
-            for div in divs:
-                text = div.text.strip()
-                if text and len(text) > 2:
-                    # Split by newlines
-                    lines = text.split('\n')
-                    if len(lines) >= 2:
-                        place = lines[0].strip()
-                        date = lines[1].strip()
-                        places_data.append(f"{place} ({date})")
-                    elif len(lines) == 1:
-                        places_data.append(lines[0].strip())
-        except:
-            pass
+    # Method 2: Backup — any span that looks like a location or date
+    try:
+        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+        for s in all_spans:
+            t = s.text.strip()
+            # Get locations (with commas) OR date info
+            if ("," in t and len(t) <= 60) or any(keyword in t for keyword in 
+                ['Moved in', 'Current town', 'Home town', 'Lives in']):
+                entries.add(t)
+    except:
+        pass
 
-    # Remove duplicates
-    places_data = list(dict.fromkeys(places_data))
+    entries = list(entries)
 
-    print(f"   ✓ Found {len(places_data)} Places:")
-    for place in places_data:
-        print(f"      - {place}")
+    print(f"   ✓ Found Entries: {entries}")
 
-    return " | ".join(places_data)
+    return " | ".join(entries)
 
 
 # ---------------- MAIN LOOP ----------------
