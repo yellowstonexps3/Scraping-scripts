@@ -66,11 +66,11 @@ def scrape_places_with_dates(url):
     except:
         pass
 
-    # Collect ALL text entries - NO FILTERS
-    entries = set()
-
-    # Method 1: Get ALL spans from Places lived section (no attribute filter)
+    # Get ALL text from Places section
+    all_text = []
+    
     try:
+        # Get all spans from Places lived section
         elems = driver.find_elements(
             By.XPATH,
             "//div[contains(@aria-label,'Places lived')]//span"
@@ -78,52 +78,54 @@ def scrape_places_with_dates(url):
         for e in elems:
             t = e.text.strip()
             if t and len(t) > 1:
-                entries.add(t)
-        print(f"   [Method 1] Found {len(entries)} entries")
-    except Exception as ex:
-        print(f"   [Method 1] Error: {ex}")
+                all_text.append(t)
+    except:
+        pass
 
-    # Method 2: Get ALL divs from Places lived section
-    try:
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//div"
-        )
-        for e in elems:
-            t = e.text.strip()
-            # Only add if it's a single line (not a parent div with multiple lines)
-            if t and '\n' not in t and len(t) > 1 and len(t) < 100:
-                entries.add(t)
-        print(f"   [Method 2] Total entries now: {len(entries)}")
-    except Exception as ex:
-        print(f"   [Method 2] Error: {ex}")
+    # Separate places (with comma) from dates/status
+    places = []
+    dates = []
+    
+    for text in all_text:
+        # Skip headers
+        if text.lower() in ['places lived', 'places', 'about']:
+            continue
+        
+        # If it has a comma, it's likely a place
+        if ',' in text:
+            places.append(text)
+        # If it has these keywords, it's a date/status
+        elif any(keyword in text for keyword in 
+                 ['Moved in', 'Current', 'Home', 'Lives in', 'From', 'Born', '19', '20']):
+            dates.append(text)
+        # Otherwise, could be either
+        else:
+            # If short, might be a date/status
+            if len(text) < 30:
+                dates.append(text)
+            else:
+                places.append(text)
+    
+    # Pair them together - match each place with its date
+    result = []
+    
+    # Try to pair them in order
+    for i in range(max(len(places), len(dates))):
+        if i < len(places) and i < len(dates):
+            # We have both place and date
+            result.append(f"{places[i]} - {dates[i]}")
+        elif i < len(places):
+            # Only place, no date
+            result.append(places[i])
+        elif i < len(dates):
+            # Only date, no place (shouldn't happen but just in case)
+            result.append(dates[i])
+    
+    print(f"   ✓ Places found: {places}")
+    print(f"   ✓ Dates found: {dates}")
+    print(f"   ✓ Paired result: {result}")
 
-    # Method 3: Get text from any element with specific keywords
-    try:
-        keywords = ['Moved in', 'Current town', 'Home town', 'Lives in', 'From', 'Born in']
-        for keyword in keywords:
-            elems = driver.find_elements(By.XPATH, f"//*[contains(text(),'{keyword}')]")
-            for e in elems:
-                t = e.text.strip()
-                if t and len(t) < 100:
-                    entries.add(t)
-        print(f"   [Method 3] Total entries now: {len(entries)}")
-    except Exception as ex:
-        print(f"   [Method 3] Error: {ex}")
-
-    # Filter out headers and long text
-    filtered = []
-    for entry in entries:
-        lower = entry.lower()
-        # Skip headers and long paragraphs
-        if lower not in ['places lived', 'places', 'about'] and len(entry) < 100:
-            filtered.append(entry)
-
-    filtered = list(dict.fromkeys(filtered))  # Remove duplicates
-
-    print(f"   ✓ Final Found: {filtered}")
-
-    return " | ".join(filtered)
+    return " | ".join(result)
 
 
 # ---------------- MAIN LOOP ----------------
