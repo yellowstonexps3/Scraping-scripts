@@ -125,6 +125,9 @@ def scrape_places(url):
         pass
 
     entries = list(entries)
+    
+    # Remove empty strings
+    entries = [e for e in entries if e and e.strip()]
 
     print(f"   ✓ Found {len(entries)} entries: {entries}")
 
