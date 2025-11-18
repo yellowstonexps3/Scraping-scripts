@@ -116,13 +116,18 @@ def scrape_work_education(url):
     except Exception as ex:
         print(f"   ⚠ Error: {ex}")
     
-    # Remove consecutive duplicates only
+    # Remove consecutive duplicates and similar entries
     cleaned = []
     prev = None
     for entry in entries:
-        if entry != prev:
-            cleaned.append(entry)
-            prev = entry
+        # Remove trailing punctuation for comparison
+        entry_normalized = entry.rstrip('·.,;: ')
+        prev_normalized = prev.rstrip('·.,;: ') if prev else None
+        
+        # Skip if same as previous or very similar
+        if entry_normalized != prev_normalized:
+            cleaned.append(entry_normalized)
+            prev = entry_normalized
     entries = cleaned
 
     print(f"   ✓ Found {len(entries)} entries: {entries}")
