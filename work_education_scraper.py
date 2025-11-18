@@ -5,7 +5,6 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-import os
 
 # ---------------- CONFIG ----------------
 INPUT_FILE = "facebook_followers.csv"
@@ -41,7 +40,7 @@ with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer.writerow(["Profile URL", "Work & Education"])
 
 
-# ---------------- SCRAPER FUNCTION (EXACTLY LIKE ALLPLACES) ----------------
+# ---------------- SIMPLE SCRAPER (SAME AS PLACES) ----------------
 def scrape_work_education(url):
     print(f"➡ Extracting Work & Education from: {url}")
 
@@ -72,106 +71,68 @@ def scrape_work_education(url):
     except:
         pass
 
-    # Collect ALL possible work and education info (EXACTLY like allplaces does)
-    entries = set()
+    # SIMPLE: Get ALL text from ALL spans on the page (SAME AS PLACES)
+    entries = []
 
-    # Method 1: Look for spans inside Work section (like allplaces does for Places lived)
     try:
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'Work')]//span[@dir='auto']"
-        )
-        for e in elems:
-            t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "work":
-                entries.add(t)
-    except:
-        pass
-
-    # Method 2: Look for spans inside University section
-    try:
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'University')]//span[@dir='auto']"
-        )
-        for e in elems:
-            t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "university":
-                entries.add(t)
-    except:
-        pass
-
-    # Method 3: Look for spans inside College section
-    try:
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'College')]//span[@dir='auto']"
-        )
-        for e in elems:
-            t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "college":
-                entries.add(t)
-    except:
-        pass
-
-    # Method 4: Look for spans inside High School section
-    try:
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'High School')]//span[@dir='auto']"
-        )
-        for e in elems:
-            t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "high school":
-                entries.add(t)
-    except:
-        pass
-
-    # Method 5: Backup — any span that looks like work/education (like allplaces does with commas)
-    # Look for common patterns in ANY span
-    try:
-        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+        # Get ALL spans
+        all_spans = driver.find_elements(By.XPATH, "//span")
+        
         for s in all_spans:
             t = s.text.strip()
-            # Look for work/education keywords and reasonable length
-            if t and 3 < len(t) <= 80:
-                # Check if it contains work/education keywords
-                keywords = [
-                    'Works at', 'Worked at', 'Work at', 'Former',
-                    'Studied at', 'Studies at', 'Went to',
-                    'Class of', 'Graduated'
-                ]
-                if any(keyword in t for keyword in keywords):
-                    entries.add(t)
-    except:
-        pass
-
-    entries = list(entries)
+            
+            if t and len(t) > 2:
+                lower = t.lower()
+                
+                # Include if it has work/education keywords
+                is_work = any(keyword in lower for keyword in 
+                    ['works at', 'worked at', 'work at', 'former', 'founder', 'ceo', 'manager'])
+                
+                is_education = any(keyword in lower for keyword in 
+                    ['studied at', 'studies at', 'went to', 'class of', 'graduated', 'attended'])
+                
+                is_company = any(keyword in t for keyword in 
+                    [' at ', ' in ', 'Inc', 'LLC', 'Corp', 'Company', 'University', 'College', 'School'])
+                
+                # Also include text that doesn't have keywords but looks like company/school names
+                # (length between 3-80 chars, on work/education page)
+                is_potential = 5 < len(t) <= 80
+                
+                if is_work or is_education or (is_company and is_potential):
+                    # Skip headers and common words
+                    if lower not in ['work and education', 'work', 'education', 'professional skills', 
+                                     'university', 'college', 'high school', 'about', 'overview']:
+                        # Clean up newlines
+                        cleaned = t.replace('\n', ' ').replace('  ', ' ').strip()
+                        if cleaned:
+                            entries.append(cleaned)
+        
+    except Exception as ex:
+        print(f"   ⚠ Error: {ex}")
     
-    # Clean up entries - remove newlines and extra spaces
-    cleaned_entries = []
+    # Remove consecutive duplicates only
+    cleaned = []
+    prev = None
     for entry in entries:
-        cleaned = entry.replace('\n', ' ').replace('  ', ' ').strip()
-        if cleaned:
-            cleaned_entries.append(cleaned)
+        if entry != prev:
+            cleaned.append(entry)
+            prev = entry
+    entries = cleaned
 
-    print(f"   ✓ Found {len(cleaned_entries)} Entries: {cleaned_entries}")
+    print(f"   ✓ Found {len(entries)} entries: {entries}")
 
-    return " | ".join(cleaned_entries)
+    return " | ".join(entries)
 
 
-# ---------------- MAIN LOOP (EXACTLY LIKE ALLPLACES) ----------------
+# ---------------- MAIN LOOP ----------------
 for i, url in enumerate(profile_links, start=1):
     print(f"\n📄 [{i}/{len(profile_links)}] Scraping {url}")
     work_edu = scrape_work_education(url)
 
-    # Write to CSV with proper quoting
     with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow([url, work_edu])
-        f.flush()  # Force write immediately
-    
-    print(f"   💾 Saved to CSV: {len(work_edu)} characters")
+        f.flush()
 
     time.sleep(2)
 
