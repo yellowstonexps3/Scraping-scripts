@@ -68,7 +68,6 @@ def scrape_places(url):
 
     # SIMPLE: Get ALL text from ALL spans on the page
     entries = []
-    seen = set()
 
     try:
         # Get ALL spans
@@ -77,7 +76,7 @@ def scrape_places(url):
         for s in all_spans:
             t = s.text.strip()
             
-            if t and len(t) > 2 and t not in seen:
+            if t and len(t) > 2:
                 lower = t.lower()
                 
                 # Include if:
@@ -93,10 +92,18 @@ def scrape_places(url):
                     # Skip headers
                     if lower not in ['places lived', 'places', 'about']:
                         entries.append(t)
-                        seen.add(t)
         
     except Exception as ex:
         print(f"   ⚠ Error: {ex}")
+    
+    # Remove consecutive duplicates only (to avoid repeated headers)
+    cleaned = []
+    prev = None
+    for entry in entries:
+        if entry != prev:
+            cleaned.append(entry)
+            prev = entry
+    entries = cleaned
 
     print(f"   ✓ Found {len(entries)} entries: {entries}")
 
