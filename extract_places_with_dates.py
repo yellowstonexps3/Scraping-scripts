@@ -84,24 +84,23 @@ def scrape_places(url):
     except:
         pass
 
-    # Backup: Get ALL spans that look relevant (only if we got nothing)
-    if len(entries) < 2:
-        try:
-            all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
-            for s in all_spans:
-                t = s.text.strip()
-                if t and len(t) > 2 and t not in seen:
-                    # Keep if: has comma OR has location/date keywords
-                    lower = t.lower()
-                    if ("," in t and len(t) <= 60) or \
-                       "moved in" in lower or \
-                       "current town" in lower or \
-                       "home town" in lower or \
-                       "lives in" in lower:
-                        entries.append(t)
-                        seen.add(t)
-        except:
-            pass
+    # Also get ANY span with date/location keywords to make sure we don't miss dates
+    try:
+        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+        for s in all_spans:
+            t = s.text.strip()
+            if t and len(t) > 2 and t not in seen:
+                lower = t.lower()
+                # Add if has comma (place) OR date/location keywords
+                if ("," in t and len(t) <= 60) or \
+                   "moved in" in lower or \
+                   "current town" in lower or \
+                   "home town" in lower or \
+                   "lives in" in lower:
+                    entries.append(t)
+                    seen.add(t)
+    except:
+        pass
     
     # Remove empty strings
     entries = [e for e in entries if e and e.strip()]
