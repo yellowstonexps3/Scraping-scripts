@@ -66,66 +66,57 @@ def scrape_places_with_dates(url):
     except:
         pass
 
-    # Get ALL text from Places section
-    all_text = []
-    
+    # Collect EVERYTHING - use multiple methods
+    all_entries = []
+
+    print("   [DEBUG] Trying multiple extraction methods...")
+
+    # Method 1: ALL spans with dir=auto (like original allplaces)
     try:
-        # Get all spans from Places lived section
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//span"
-        )
+        elems = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+        print(f"   [Method 1] Found {len(elems)} spans with dir=auto")
         for e in elems:
             t = e.text.strip()
             if t and len(t) > 1:
-                all_text.append(t)
+                all_entries.append(t)
+    except Exception as ex:
+        print(f"   [Method 1] Error: {ex}")
+
+    # Method 2: ALL spans (no filter)
+    try:
+        elems = driver.find_elements(By.XPATH, "//span")
+        print(f"   [Method 2] Found {len(elems)} total spans")
     except:
         pass
 
-    # Separate places (with comma) from dates/status
-    places = []
-    dates = []
-    
-    for text in all_text:
-        # Skip headers
-        if text.lower() in ['places lived', 'places', 'about']:
-            continue
-        
-        # If it has a comma, it's likely a place
-        if ',' in text:
-            places.append(text)
-        # If it has these keywords, it's a date/status
-        elif any(keyword in text for keyword in 
-                 ['Moved in', 'Current', 'Home', 'Lives in', 'From', 'Born', '19', '20']):
-            dates.append(text)
-        # Otherwise, could be either
-        else:
-            # If short, might be a date/status
-            if len(text) < 30:
-                dates.append(text)
-            else:
-                places.append(text)
-    
-    # Pair them together - match each place with its date
-    result = []
-    
-    # Try to pair them in order
-    for i in range(max(len(places), len(dates))):
-        if i < len(places) and i < len(dates):
-            # We have both place and date
-            result.append(f"{places[i]} - {dates[i]}")
-        elif i < len(places):
-            # Only place, no date
-            result.append(places[i])
-        elif i < len(dates):
-            # Only date, no place (shouldn't happen but just in case)
-            result.append(dates[i])
-    
-    print(f"   ✓ Places found: {places}")
-    print(f"   ✓ Dates found: {dates}")
-    print(f"   ✓ Paired result: {result}")
+    # Method 3: Look for text containing comma (places)
+    try:
+        elems = driver.find_elements(By.XPATH, "//*[contains(text(),',')]")
+        print(f"   [Method 3] Found {len(elems)} elements with comma")
+        for e in elems:
+            t = e.text.strip()
+            if ',' in t and len(t) < 100:
+                all_entries.append(t)
+    except Exception as ex:
+        print(f"   [Method 3] Error: {ex}")
 
-    return " | ".join(result)
+    # Remove duplicates
+    all_entries = list(dict.fromkeys(all_entries))
+    
+    # Filter to only places-related entries
+    filtered = []
+    for entry in all_entries:
+        lower = entry.lower()
+        # Keep if: has comma, or has date/location keywords
+        if (',' in entry) or \
+           any(keyword in lower for keyword in ['moved', 'current', 'home', 'town', 'city', '199', '200', '201', '202']):
+            if lower not in ['places lived', 'places', 'about', 'overview']:
+                filtered.append(entry)
+
+    print(f"   ✓ Total entries found: {len(all_entries)}")
+    print(f"   ✓ Filtered entries: {filtered}")
+
+    return " | ".join(filtered)
 
 
 # ---------------- MAIN LOOP ----------------
@@ -137,6 +128,8 @@ for i, url in enumerate(profile_links, start=1):
         writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow([url, places_dates])
         f.flush()
+
+    print(f"   💾 Saved: {places_dates}")
 
     time.sleep(2)
 
