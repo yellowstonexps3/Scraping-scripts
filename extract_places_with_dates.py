@@ -70,37 +70,40 @@ def scrape_places(url):
     entries = []
     seen = set()  # Track duplicates
 
-    # Get ALL spans from Places lived section in ORDER
+    # Get ALL spans from Places lived section in ORDER (NO ATTRIBUTE FILTER!)
     try:
+        # First, try ALL spans (not just dir='auto')
         elems = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//span[@dir='auto']"
+            "//div[contains(@aria-label,'Places lived')]//span"
         )
         for e in elems:
             t = e.text.strip()
             if t and len(t) > 2 and t.lower() != "places lived" and t not in seen:
                 entries.append(t)
                 seen.add(t)
-    except:
-        pass
+        print(f"   [Method 1] Got {len(entries)} entries from Places section")
+    except Exception as ex:
+        print(f"   [Method 1] Error: {ex}")
 
-    # Also get ANY span with date/location keywords to make sure we don't miss dates
+    # Backup: scan entire page for anything we missed
     try:
-        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+        all_spans = driver.find_elements(By.XPATH, "//span")
+        count_before = len(entries)
         for s in all_spans:
             t = s.text.strip()
             if t and len(t) > 2 and t not in seen:
                 lower = t.lower()
-                # Add if has comma (place) OR date/location keywords
-                if ("," in t and len(t) <= 60) or \
-                   "moved in" in lower or \
+                # Add if has date/location keywords
+                if "moved in" in lower or \
                    "current town" in lower or \
                    "home town" in lower or \
                    "lives in" in lower:
                     entries.append(t)
                     seen.add(t)
-    except:
-        pass
+        print(f"   [Method 2] Added {len(entries) - count_before} more entries")
+    except Exception as ex:
+        print(f"   [Method 2] Error: {ex}")
     
     # Remove empty strings
     entries = [e for e in entries if e and e.strip()]
