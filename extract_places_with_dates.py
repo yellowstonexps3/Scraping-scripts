@@ -66,10 +66,11 @@ def scrape_places(url):
     except:
         pass
 
-    # Collect ALL possible entries
-    entries = set()
+    # Collect ALL possible entries - USE LIST to preserve order
+    entries = []
+    seen = set()  # Track duplicates
 
-    # Method 1: Look for spans inside Places lived section
+    # Get ALL spans from Places lived section in ORDER
     try:
         elems = driver.find_elements(
             By.XPATH,
@@ -77,54 +78,30 @@ def scrape_places(url):
         )
         for e in elems:
             t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "places lived":
-                entries.add(t)
+            if t and len(t) > 2 and t.lower() != "places lived" and t not in seen:
+                entries.append(t)
+                seen.add(t)
     except:
         pass
 
-    # Method 2: Get ALL spans from the entire page that look relevant
-    try:
-        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
-        for s in all_spans:
-            t = s.text.strip()
-            if t and len(t) > 2:
-                # Keep if: has comma OR has location/date keywords
-                lower = t.lower()
-                if ("," in t and len(t) <= 60) or \
-                   "moved in" in lower or \
-                   "current town" in lower or \
-                   "home town" in lower or \
-                   "lives in" in lower:
-                    entries.add(t)
-    except:
-        pass
-
-    # Method 3: Search for specific text patterns anywhere on page
-    try:
-        # Look for "Moved in XXXX"
-        moved_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Moved in')]")
-        for elem in moved_elems:
-            t = elem.text.strip()
-            if "Moved in" in t and len(t) < 30:
-                entries.add(t)
-        
-        # Look for "Current town/city"
-        current_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Current town')]")
-        for elem in current_elems:
-            t = elem.text.strip()
-            if len(t) < 30:
-                entries.add(t)
-        
-        # Look for "Home town"
-        home_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Home town')]")
-        for elem in home_elems:
-            t = elem.text.strip()
-            if len(t) < 30:
-                entries.add(t)
-    except:
-        pass
-
-    entries = list(entries)
+    # Backup: Get ALL spans that look relevant (only if we got nothing)
+    if len(entries) < 2:
+        try:
+            all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
+            for s in all_spans:
+                t = s.text.strip()
+                if t and len(t) > 2 and t not in seen:
+                    # Keep if: has comma OR has location/date keywords
+                    lower = t.lower()
+                    if ("," in t and len(t) <= 60) or \
+                       "moved in" in lower or \
+                       "current town" in lower or \
+                       "home town" in lower or \
+                       "lives in" in lower:
+                        entries.append(t)
+                        seen.add(t)
+        except:
+            pass
     
     # Remove empty strings
     entries = [e for e in entries if e and e.strip()]
