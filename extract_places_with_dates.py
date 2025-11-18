@@ -4,11 +4,10 @@ from selenium.webdriver.common.by import By
 import pandas as pd
 import csv
 import time
-import re
 
 # ---------------- CONFIG ----------------
-INPUT_FILE = "facebook_followers.csv"   # Input CSV with column 'Profile Link'
-OUTPUT_FILE = "facebook_places_with_dates.csv"  # Output file
+INPUT_FILE = "facebook_followers.csv"
+OUTPUT_FILE = "facebook_places_with_dates.csv"
 
 chrome_options = Options()
 chrome_options.add_argument("--start-maximized")
@@ -69,94 +68,79 @@ def scrape_places_with_dates(url):
 
     places_data = []
 
-    # Method 1: Get places with dates from Places lived section using parent divs
+    # Get ALL text from Places lived section - line by line
     try:
-        # Look for the main Places lived container
-        place_cards = driver.find_elements(
+        # Get all spans from Places lived section
+        all_spans = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//div[@role='article' or contains(@class,'x1lliihq')]"
+            "//div[contains(@aria-label,'Places lived')]//span[@dir='auto' or @dir='ltr']"
         )
         
-        for card in place_cards:
-            try:
-                # Get all text from this card
-                full_text = card.text.strip()
+        # Extract all text lines
+        all_lines = []
+        for span in all_spans:
+            text = span.text.strip()
+            if text and len(text) > 1:
+                all_lines.append(text)
+        
+        # Process lines in pairs (place, then date/status)
+        i = 0
+        while i < len(all_lines):
+            line = all_lines[i]
+            
+            # Skip header texts
+            if line.lower() in ['places lived', 'places', 'current city', 'hometown']:
+                i += 1
+                continue
+            
+            # Check if this looks like a place (has comma or is substantial text)
+            if ',' in line or len(line) > 3:
+                place = line
+                date_info = ""
                 
-                if full_text and len(full_text) > 2:
-                    # Split by newlines to separate place from dates
-                    lines = [line.strip() for line in full_text.split('\n') if line.strip()]
-                    
-                    if len(lines) > 0:
-                        place = lines[0]
-                        dates = ""
-                        
-                        # Look for date patterns in remaining lines
-                        for line in lines[1:]:
-                            # Check if line contains year patterns (4 digits) or date keywords
-                            if re.search(r'\d{4}|Present|Current|Moved|Lives|From', line):
-                                dates = line
-                                break
-                        
-                        # Format output
-                        if dates:
-                            places_data.append(f"{place} ({dates})")
-                        else:
-                            places_data.append(place)
-            except:
-                pass
-    except:
+                # Check next line for date/status info
+                if i + 1 < len(all_lines):
+                    next_line = all_lines[i + 1]
+                    # Check if next line is a status/date (not another place)
+                    if any(keyword in next_line.lower() for keyword in 
+                           ['moved', 'current', 'home', 'town', 'city', '199', '200', '201', '202']):
+                        date_info = next_line
+                        i += 1  # Skip the date line in next iteration
+                
+                # Format output
+                if date_info:
+                    places_data.append(f"{place} ({date_info})")
+                else:
+                    places_data.append(place)
+            
+            i += 1
+            
+    except Exception as e:
+        print(f"   ⚠ Error: {e}")
         pass
 
-    # Method 2: Alternative - Get ALL divs with location text
+    # Fallback: Get all divs with text content
     if not places_data:
         try:
-            elems = driver.find_elements(
+            divs = driver.find_elements(
                 By.XPATH,
-                "//div[contains(@aria-label,'Places lived')]//span[@dir='auto']"
+                "//div[contains(@aria-label,'Places lived')]//div[@dir='auto']"
             )
-            
-            all_text = []
-            for e in elems:
-                t = e.text.strip()
-                if t and len(t) > 2 and t.lower() not in ['places lived', 'places', 'current city', 'hometown']:
-                    all_text.append(t)
-            
-            # Try to pair places with dates
-            current_place = None
-            for text in all_text:
-                # Check if this looks like a date
-                if re.search(r'\d{4}|Present|Current|From|Moved to', text):
-                    if current_place:
-                        places_data.append(f"{current_place} ({text})")
-                        current_place = None
-                    else:
-                        places_data.append(text)
-                else:
-                    # This is likely a place name
-                    if current_place:
-                        places_data.append(current_place)
-                    current_place = text
-            
-            # Add last place if exists
-            if current_place:
-                places_data.append(current_place)
-                
+            for div in divs:
+                text = div.text.strip()
+                if text and len(text) > 2:
+                    # Split by newlines
+                    lines = text.split('\n')
+                    if len(lines) >= 2:
+                        place = lines[0].strip()
+                        date = lines[1].strip()
+                        places_data.append(f"{place} ({date})")
+                    elif len(lines) == 1:
+                        places_data.append(lines[0].strip())
         except:
             pass
 
-    # Method 3: Backup — Look for any location with comma (city, state, country)
-    if not places_data:
-        try:
-            all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
-            for s in all_spans:
-                t = s.text.strip()
-                if "," in t and len(t) <= 60:  # looks like a location
-                    if t not in places_data:
-                        places_data.append(t)
-        except:
-            pass
-
-    # Remove duplicates while preserving order
+    # Remove duplicates
     places_data = list(dict.fromkeys(places_data))
 
     print(f"   ✓ Found {len(places_data)} Places:")
@@ -172,8 +156,9 @@ for i, url in enumerate(profile_links, start=1):
     places_dates = scrape_places_with_dates(url)
 
     with open(OUTPUT_FILE, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, quoting=csv.QUOTE_ALL)
         writer.writerow([url, places_dates])
+        f.flush()
 
     time.sleep(2)
 
