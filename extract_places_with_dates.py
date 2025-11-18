@@ -36,7 +36,7 @@ with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer.writerow(["Profile URL", "Places with Dates"])
 
 
-# ---------------- SCRAPER FUNCTION (SIMPLE LIKE ALLPLACES) ----------------
+# ---------------- SCRAPER FUNCTION ----------------
 def scrape_places_with_dates(url):
     print(f"➡ Extracting Places & Dates from: {url}")
 
@@ -66,39 +66,64 @@ def scrape_places_with_dates(url):
     except:
         pass
 
-    # Collect ALL text entries (EXACTLY like allplaces does)
+    # Collect ALL text entries - NO FILTERS
     entries = set()
 
-    # Method 1: Look for spans inside Places lived section
+    # Method 1: Get ALL spans from Places lived section (no attribute filter)
     try:
         elems = driver.find_elements(
             By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//span[@dir='auto']"
+            "//div[contains(@aria-label,'Places lived')]//span"
         )
         for e in elems:
             t = e.text.strip()
-            if t and len(t) > 1 and t.lower() not in ["places lived"]:
+            if t and len(t) > 1:
                 entries.add(t)
-    except:
-        pass
+        print(f"   [Method 1] Found {len(entries)} entries")
+    except Exception as ex:
+        print(f"   [Method 1] Error: {ex}")
 
-    # Method 2: Backup — any span that looks like a location or date
+    # Method 2: Get ALL divs from Places lived section
     try:
-        all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
-        for s in all_spans:
-            t = s.text.strip()
-            # Get locations (with commas) OR date info
-            if ("," in t and len(t) <= 60) or any(keyword in t for keyword in 
-                ['Moved in', 'Current town', 'Home town', 'Lives in']):
+        elems = driver.find_elements(
+            By.XPATH,
+            "//div[contains(@aria-label,'Places lived')]//div"
+        )
+        for e in elems:
+            t = e.text.strip()
+            # Only add if it's a single line (not a parent div with multiple lines)
+            if t and '\n' not in t and len(t) > 1 and len(t) < 100:
                 entries.add(t)
-    except:
-        pass
+        print(f"   [Method 2] Total entries now: {len(entries)}")
+    except Exception as ex:
+        print(f"   [Method 2] Error: {ex}")
 
-    entries = list(entries)
+    # Method 3: Get text from any element with specific keywords
+    try:
+        keywords = ['Moved in', 'Current town', 'Home town', 'Lives in', 'From', 'Born in']
+        for keyword in keywords:
+            elems = driver.find_elements(By.XPATH, f"//*[contains(text(),'{keyword}')]")
+            for e in elems:
+                t = e.text.strip()
+                if t and len(t) < 100:
+                    entries.add(t)
+        print(f"   [Method 3] Total entries now: {len(entries)}")
+    except Exception as ex:
+        print(f"   [Method 3] Error: {ex}")
 
-    print(f"   ✓ Found Entries: {entries}")
+    # Filter out headers and long text
+    filtered = []
+    for entry in entries:
+        lower = entry.lower()
+        # Skip headers and long paragraphs
+        if lower not in ['places lived', 'places', 'about'] and len(entry) < 100:
+            filtered.append(entry)
 
-    return " | ".join(entries)
+    filtered = list(dict.fromkeys(filtered))  # Remove duplicates
+
+    print(f"   ✓ Final Found: {filtered}")
+
+    return " | ".join(filtered)
 
 
 # ---------------- MAIN LOOP ----------------
