@@ -36,7 +36,7 @@ with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer.writerow(["Profile URL", "All Places & Dates"])
 
 
-# ---------------- SCRAPER FUNCTION (EXACTLY LIKE ALLPLACES - NO FILTERS) ----------------
+# ---------------- SCRAPER FUNCTION ----------------
 def scrape_places(url):
     print(f"➡ Extracting Places & Dates from: {url}")
 
@@ -66,10 +66,10 @@ def scrape_places(url):
     except:
         pass
 
-    # Collect ALL - EXACTLY like allplaces does
+    # Collect ALL possible entries
     entries = set()
 
-    # Method 1: Look for spans inside Places lived section (LIKE ALLPLACES)
+    # Method 1: Look for spans inside Places lived section
     try:
         elems = driver.find_elements(
             By.XPATH,
@@ -77,29 +77,56 @@ def scrape_places(url):
         )
         for e in elems:
             t = e.text.strip()
-            # ONLY filter out the header "places lived"
             if t and len(t) > 2 and t.lower() != "places lived":
                 entries.add(t)
     except:
         pass
 
-    # Method 2: Backup — get ALL spans with dir=auto (LIKE ALLPLACES but NO comma filter)
+    # Method 2: Get ALL spans from the entire page that look relevant
     try:
         all_spans = driver.find_elements(By.XPATH, "//span[@dir='auto']")
         for s in all_spans:
             t = s.text.strip()
-            # Accept ANYTHING that looks reasonable (place OR date)
-            if t and 2 < len(t) <= 80:
-                # Include if it has comma (place) OR date keywords
-                if "," in t or any(keyword in t for keyword in 
-                    ['Moved', 'Current', 'Home', 'town', 'city', '199', '200', '201', '202']):
+            if t and len(t) > 2:
+                # Keep if: has comma OR has location/date keywords
+                lower = t.lower()
+                if ("," in t and len(t) <= 60) or \
+                   "moved in" in lower or \
+                   "current town" in lower or \
+                   "home town" in lower or \
+                   "lives in" in lower:
                     entries.add(t)
+    except:
+        pass
+
+    # Method 3: Search for specific text patterns anywhere on page
+    try:
+        # Look for "Moved in XXXX"
+        moved_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Moved in')]")
+        for elem in moved_elems:
+            t = elem.text.strip()
+            if "Moved in" in t and len(t) < 30:
+                entries.add(t)
+        
+        # Look for "Current town/city"
+        current_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Current town')]")
+        for elem in current_elems:
+            t = elem.text.strip()
+            if len(t) < 30:
+                entries.add(t)
+        
+        # Look for "Home town"
+        home_elems = driver.find_elements(By.XPATH, "//*[contains(text(),'Home town')]")
+        for elem in home_elems:
+            t = elem.text.strip()
+            if len(t) < 30:
+                entries.add(t)
     except:
         pass
 
     entries = list(entries)
 
-    print(f"   ✓ Found: {entries}")
+    print(f"   ✓ Found {len(entries)} entries: {entries}")
 
     return " | ".join(entries)
 
