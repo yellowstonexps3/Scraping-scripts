@@ -94,11 +94,17 @@ def scrape_work_education(url):
                 is_company = any(keyword in t for keyword in 
                     [' at ', ' in ', 'Inc', 'LLC', 'Corp', 'Company', 'University', 'College', 'School'])
                 
+                # Check for dates (years, date ranges)
+                is_date = any(year in t for year in ['199', '200', '201', '202']) or \
+                          'present' in lower or \
+                          ' - ' in t or \
+                          'to ' in lower
+                
                 # Also include text that doesn't have keywords but looks like company/school names
                 # (length between 3-80 chars, on work/education page)
                 is_potential = 5 < len(t) <= 80
                 
-                if is_work or is_education or (is_company and is_potential):
+                if is_work or is_education or (is_company and is_potential) or is_date:
                     # Skip headers and common words
                     if lower not in ['work and education', 'work', 'education', 'professional skills', 
                                      'university', 'college', 'high school', 'about', 'overview']:
