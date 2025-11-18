@@ -36,7 +36,7 @@ with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as f:
     writer.writerow(["Profile URL", "All Places & Dates"])
 
 
-# ---------------- SCRAPER FUNCTION ----------------
+# ---------------- SIMPLE SCRAPER ----------------
 def scrape_places(url):
     print(f"➡ Extracting Places & Dates from: {url}")
 
@@ -66,47 +66,37 @@ def scrape_places(url):
     except:
         pass
 
-    # Collect ALL possible entries - USE LIST to preserve order
+    # SIMPLE: Get ALL text from ALL spans on the page
     entries = []
-    seen = set()  # Track duplicates
+    seen = set()
 
-    # Get ALL spans from Places lived section in ORDER (NO ATTRIBUTE FILTER!)
     try:
-        # First, try ALL spans (not just dir='auto')
-        elems = driver.find_elements(
-            By.XPATH,
-            "//div[contains(@aria-label,'Places lived')]//span"
-        )
-        for e in elems:
-            t = e.text.strip()
-            if t and len(t) > 2 and t.lower() != "places lived" and t not in seen:
-                entries.append(t)
-                seen.add(t)
-        print(f"   [Method 1] Got {len(entries)} entries from Places section")
-    except Exception as ex:
-        print(f"   [Method 1] Error: {ex}")
-
-    # Backup: scan entire page for anything we missed
-    try:
+        # Get ALL spans
         all_spans = driver.find_elements(By.XPATH, "//span")
-        count_before = len(entries)
+        
         for s in all_spans:
             t = s.text.strip()
+            
             if t and len(t) > 2 and t not in seen:
                 lower = t.lower()
-                # Add if has date/location keywords
-                if "moved in" in lower or \
-                   "current town" in lower or \
-                   "home town" in lower or \
-                   "lives in" in lower:
-                    entries.append(t)
-                    seen.add(t)
-        print(f"   [Method 2] Added {len(entries) - count_before} more entries")
+                
+                # Include if:
+                # 1. Has comma (place name like "New York, NY")
+                # 2. Has date keywords (like "Moved in 2016")
+                # 3. Has status keywords (like "Current town/city", "Home town")
+                
+                is_place = "," in t and len(t) <= 60
+                is_date = "moved in" in lower or any(year in t for year in ['199', '200', '201', '202'])
+                is_status = "current town" in lower or "home town" in lower or "lives in" in lower
+                
+                if is_place or is_date or is_status:
+                    # Skip headers
+                    if lower not in ['places lived', 'places', 'about']:
+                        entries.append(t)
+                        seen.add(t)
+        
     except Exception as ex:
-        print(f"   [Method 2] Error: {ex}")
-    
-    # Remove empty strings
-    entries = [e for e in entries if e and e.strip()]
+        print(f"   ⚠ Error: {ex}")
 
     print(f"   ✓ Found {len(entries)} entries: {entries}")
 
