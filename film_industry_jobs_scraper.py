@@ -31,8 +31,31 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
-INDEED_BASE_URL = "https://www.indeed.com"
-INDEED_SEARCH_URL = "https://www.indeed.com/jobs"
+INDEED_DEFAULT_BASE_URL = "https://www.indeed.com"
+INDEED_SEARCH_PATH = "/jobs"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+INDEED_DOMAINS = {
+    "United States": "https://www.indeed.com",
+    "United Kingdom": "https://www.indeed.co.uk",
+    "Canada": "https://www.indeed.ca",
+    "India": "https://www.indeed.co.in",
+    "Australia": "https://www.indeed.com.au",
+    "Germany": "https://www.indeed.de",
+    "France": "https://www.indeed.fr",
+}
+CARD_SELECTORS = ["div.job_seen_beacon", "a.tapItem"]
+BLOCKED_TITLE_KEYWORDS = ["just a moment", "robot", "access denied"]
+BLOCKED_BODY_PHRASES = [
+    "unusual traffic",
+    "verify you are human",
+    "temporarily blocked",
+    "captcha",
+    "access denied",
+]
 
 FIELDNAMES = [
     "search_query",
@@ -107,16 +130,51 @@ def parse_args() -> argparse.Namespace:
         default=2.8,
         help="Maximum delay between page requests in seconds.",
     )
+    parser.add_argument(
+        "--user-agent",
+        default=DEFAULT_USER_AGENT,
+        help="Custom user agent string for Chrome.",
+    )
+    parser.add_argument(
+        "--page-load-timeout",
+        type=int,
+        default=30,
+        help="Page load timeout in seconds.",
+    )
+    parser.add_argument(
+        "--page-retries",
+        type=int,
+        default=2,
+        help="Retries when a page is blocked or unavailable.",
+    )
+    parser.add_argument(
+        "--wait-timeout",
+        type=int,
+        default=15,
+        help="Wait timeout for job cards in seconds.",
+    )
+    parser.add_argument(
+        "--use-country-domains",
+        action="store_true",
+        help="Use country-specific Indeed domains when location matches.",
+    )
     return parser.parse_args()
 
 
-def build_search_url(query: str, location: str, start: int) -> str:
+def build_search_url(query: str, location: str, start: int, base_url: str) -> str:
     params = f"q={quote_plus(query)}&l={quote_plus(location)}&start={start}"
-    return f"{INDEED_SEARCH_URL}?{params}"
+    search_root = urljoin(base_url, INDEED_SEARCH_PATH)
+    return f"{search_root}?{params}"
 
 
 def normalize_text(value: str) -> str:
     return " ".join(value.split()) if value else ""
+
+
+def resolve_base_url(location: str, use_country_domains: bool) -> str:
+    if use_country_domains:
+        return INDEED_DOMAINS.get(location, INDEED_DEFAULT_BASE_URL)
+    return INDEED_DEFAULT_BASE_URL
 
 
 def get_text(parent, selectors) -> str:
@@ -178,7 +236,7 @@ def fetch_description(driver: webdriver.Chrome, job_url: str) -> str:
     return description_text
 
 
-def extract_job(card, query, location, fetch_full_description, driver) -> dict:
+def extract_job(card, query, location, fetch_full_description, driver, base_url) -> dict:
     job_title = get_text(card, ["h2.jobTitle span", "a[data-jk]"])
     company = get_text(card, ["span.companyName"])
     job_location = get_text(card, ["div.companyLocation"])
@@ -190,7 +248,7 @@ def extract_job(card, query, location, fetch_full_description, driver) -> dict:
     try:
         link = card.find_element(By.CSS_SELECTOR, "h2.jobTitle a")
         href = link.get_attribute("href")
-        job_url = urljoin(INDEED_BASE_URL, href) if href else ""
+        job_url = urljoin(base_url, href) if href else ""
     except NoSuchElementException:
         job_url = ""
 
@@ -214,14 +272,49 @@ def extract_job(card, query, location, fetch_full_description, driver) -> dict:
     }
 
 
-def wait_for_job_cards(driver: webdriver.Chrome) -> list:
+def get_job_cards(driver: webdriver.Chrome) -> list:
+    for selector in CARD_SELECTORS:
+        cards = driver.find_elements(By.CSS_SELECTOR, selector)
+        if cards:
+            return cards
+    return []
+
+
+def wait_for_job_cards(driver: webdriver.Chrome, timeout: int) -> list:
     try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.job_seen_beacon"))
-        )
+        WebDriverWait(driver, timeout).until(lambda d: bool(get_job_cards(d)))
     except TimeoutException:
         return []
-    return driver.find_elements(By.CSS_SELECTOR, "div.job_seen_beacon")
+    return get_job_cards(driver)
+
+
+def is_blocked_page(driver: webdriver.Chrome) -> bool:
+    title = (driver.title or "").lower()
+    if any(keyword in title for keyword in BLOCKED_TITLE_KEYWORDS):
+        return True
+    try:
+        body_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+    except NoSuchElementException:
+        return False
+    return any(phrase in body_text for phrase in BLOCKED_BODY_PHRASES)
+
+
+def load_search_page(
+    driver: webdriver.Chrome,
+    url: str,
+    retries: int,
+    delay_min: float,
+    delay_max: float,
+) -> bool:
+    for attempt in range(1, retries + 1):
+        driver.get(url)
+        time.sleep(2)
+        maybe_accept_cookies(driver)
+        if not is_blocked_page(driver):
+            return True
+        if attempt < retries:
+            time.sleep(random.uniform(delay_min, delay_max))
+    return False
 
 
 def scrape_location(
@@ -231,19 +324,29 @@ def scrape_location(
     max_pages: int,
     max_jobs: int,
     fetch_full_description: bool,
+    use_country_domains: bool,
+    page_retries: int,
+    wait_timeout: int,
     delay_min: float,
     delay_max: float,
     seen_urls: set,
 ) -> list:
     results = []
+    base_url = resolve_base_url(location, use_country_domains)
     for page in range(max_pages):
         start = page * 10
-        search_url = build_search_url(query, location, start)
+        search_url = build_search_url(query, location, start, base_url)
         print(f"Loading: {search_url}", flush=True)
-        driver.get(search_url)
-        time.sleep(2)
-        maybe_accept_cookies(driver)
-        cards = wait_for_job_cards(driver)
+        if not load_search_page(
+            driver=driver,
+            url=search_url,
+            retries=page_retries,
+            delay_min=delay_min,
+            delay_max=delay_max,
+        ):
+            print("Blocked or unavailable page. Stopping.", flush=True)
+            break
+        cards = wait_for_job_cards(driver, wait_timeout)
         if not cards:
             print("No job cards found. Stopping.", flush=True)
             break
@@ -255,6 +358,7 @@ def scrape_location(
                 location=location,
                 fetch_full_description=fetch_full_description,
                 driver=driver,
+                base_url=base_url,
             )
             job_url = job_data.get("job_url")
             if job_url and job_url in seen_urls:
@@ -288,7 +392,7 @@ def resolve_locations(args: argparse.Namespace) -> list:
     return deduped
 
 
-def build_driver(headless: bool) -> webdriver.Chrome:
+def build_driver(headless: bool, user_agent: str, page_load_timeout: int) -> webdriver.Chrome:
     options = Options()
     if headless:
         options.add_argument("--headless=new")
@@ -298,14 +402,33 @@ def build_driver(headless: bool) -> webdriver.Chrome:
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+    if user_agent:
+        options.add_argument(f"--user-agent={user_agent}")
     service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {
+            "source": "Object.defineProperty(navigator, 'webdriver', { get: () => undefined })"
+        },
+    )
+    driver.set_page_load_timeout(page_load_timeout)
+    return driver
 
 
 def main() -> int:
     args = parse_args()
     if args.max_pages < 1:
         print("max-pages must be >= 1", file=sys.stderr)
+        return 2
+    if args.page_retries < 1:
+        print("page-retries must be >= 1", file=sys.stderr)
+        return 2
+    if args.page_load_timeout < 1:
+        print("page-load-timeout must be >= 1", file=sys.stderr)
+        return 2
+    if args.wait_timeout < 1:
+        print("wait-timeout must be >= 1", file=sys.stderr)
         return 2
 
     locations = resolve_locations(args)
@@ -318,7 +441,7 @@ def main() -> int:
     print(f"Output: {args.output}", flush=True)
 
     seen_urls = set()
-    driver = build_driver(args.headless)
+    driver = build_driver(args.headless, args.user_agent, args.page_load_timeout)
     try:
         with open(args.output, "w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=FIELDNAMES)
@@ -333,6 +456,9 @@ def main() -> int:
                     max_pages=args.max_pages,
                     max_jobs=args.max_jobs,
                     fetch_full_description=args.fetch_description,
+                    use_country_domains=args.use_country_domains,
+                    page_retries=args.page_retries,
+                    wait_timeout=args.wait_timeout,
                     delay_min=args.delay_min,
                     delay_max=args.delay_max,
                     seen_urls=seen_urls,
